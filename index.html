@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Pembagi Kelompok Real-Time</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 min-h-screen py-10 px-4">
+    <div class="max-w-2xl mx-auto space-y-8">
+        
+        <!-- Header -->
+        <div class="text-center space-y-2">
+            <h1 class="text-3xl font-bold text-slate-800">Randomizer Kelompok Otomatis</h1>
+            <p class="text-slate-600">Ketik nama kamu, sistem bakal otomatis masukin kamu ke kelompok secara adil!</p>
+        </div>
+
+        <!-- Card Input Nama -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+            <h2 class="text-xl font-semibold text-slate-700">Daftarkan Nama</h2>
+            <div class="flex gap-2">
+                <input type="text" id="namaInput" placeholder="Ketik nama lengkap kamu..." 
+                    class="flex-1 px-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button onclick="tambahNama()" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl font-medium transition">
+                    Masuk Kelompok
+                </button>
+            </div>
+            
+            <!-- Pengaturan Ukuran Kelompok -->
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span class="text-sm font-medium text-slate-600">Maksimal Anggota per Kelompok:</span>
+                <input type="number" id="ukuranKelompok" value="3" min="1" onchange="ubahUkuranKelompok()"
+                    class="w-20 px-3 py-1 border border-slate-300 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+        </div>
+
+        <!-- Hasil Kelompok -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-slate-700">Daftar Kelompok (Live)</h2>
+                <button onclick="resetData()" class="text-xs text-red-500 hover:underline">Reset Semua Data</button>
+            </div>
+            <div id="gridHasil" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Data kelompok akan muncul otomatis di sini secara real-time -->
+                <div class="text-slate-400 text-sm italic col-span-2 text-center py-6">Memuat data kelompok...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Firebase SDK (Modular v9) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Konfigurasi Firebase dari akun kamu
+        const firebaseConfig = {
+            apiKey: "AIzaSyD1_Ztr0nCa_VKJNP6NYJd1XUazPhEIfMl",
+            authDomain: "pembagian-kelompok-eb270.firebaseapp.com",
+            projectId: "pembagian-kelompok-eb270",
+            storageBucket: "pembagian-kelompok-eb270.appspot.com",
+            messagingSenderId: "751724753964",
+            appId: "1:751724753964:web:551ac3db53870090fb4d89",
+            measurementId: "G-ESE2CLXE8G"
+        };
+
+        // Inisialisasi Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Global functions biar bisa dipanggil dari elemen HTML onclick
+        window.tambahNama = async function() {
+            const input = document.getElementById('namaInput');
+            const nama = input.value.trim();
+
+            if (!nama) {
+                alert("Nama tidak boleh kosong!");
+                return;
+            }
+
+            try {
+                // Cek dulu apakah nama sudah ada di database
+                const querySnapshot = await getDocs(collection(db, "peserta"));
+                let sudahAda = false;
+                querySnapshot.forEach((doc) => {
+                    if (doc.data().nama.toLowerCase() === nama.toLowerCase()) {
+                        sudahAda = true;
+                    }
+                });
+
+                if (sudahAda) {
+                    alert("Nama tersebut sudah terdaftar di dalam sistem!");
+                    return;
+                }
+
+                // Tambah ke Firestore collection "peserta"
+                await addDoc(collection(db, "peserta"), {
+                    nama: nama,
+                    waktu: Date.now()
+                });
+
+                input.value = '';
+            } catch (error) {
+                console.error("Gagal menambahkan nama: ", error);
+                alert("Terjadi kesalahan saat menyimpan data.");
+            }
+        };
+
+        window.resetData = async function() {
+            if (confirm("Yakin mau mereset semua nama peserta?")) {
+                const querySnapshot = await getDocs(collection(db, "peserta"));
+                querySnapshot.forEach(async (document) => {
+                    await deleteDoc(doc(db, "peserta", document.id));
+                });
+            }
+        };
+
+        window.ubahUkuranKelompok = function() {
+            // Bisa dipakai kalau mau nyimpen settingan ukuran kelompok di database juga
+            renderKelompokUI();
+        }
+
+        let daftarPesertaGlobal = [];
+
+        // Mendengarkan perubahan data secara real-time dari Firebase Firestore
+        onSnapshot(collection(db, "peserta"), (snapshot) => {
+            daftarPesertaGlobal = [];
+            snapshot.forEach((doc) => {
+                daftarPesertaGlobal.push({ id: doc.id, ...doc.data() });
+            });
+            // Urutkan berdasarkan waktu daftar supaya adil urutannya
+            daftarPesertaGlobal.sort((a, b) => a.waktu - b.waktu);
+            renderKelompokUI();
+        });
+
+        function renderKelompokUI() {
+            const grid = document.getElementById('gridHasil');
+            const ukuran = parseInt(document.getElementById('ukuranKelompok').value) || 3;
+
+            if (daftarPesertaGlobal.length === 0) {
+                grid.innerHTML = '<div class="text-slate-400 text-sm italic col-span-2 text-center py-6 bg-white rounded-2xl border border-slate-100">Belum ada nama yang masuk. Jadilah yang pertama mengisi!</div>';
+                return;
+            }
+
+            // Membagi peserta ke dalam kelompok berdasarkan ukuran yang ditentukan secara adil berurutan
+            let kelompokList = [];
+            for (let i = 0; i < daftarPesertaGlobal.length; i += ukuran) {
+                kelompokList.push(daftarPesertaGlobal.slice(i, i + ukuran));
+            }
+
+            grid.innerHTML = '';
+            kelompokList.forEach((kelompok, index) => {
+                let card = document.createElement('div');
+                card.className = 'bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-3';
+                
+                let anggotaHTML = kelompok.map((m, idx) => `
+                    <li class="text-slate-600 flex justify-between items-center py-1 border-b border-slate-50 last:border-none">
+                        <span>${idx + 1}. ${m.nama}</span>
+                    </li>
+                `).join('');
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+                        <h3 class="font-bold text-slate-800">Kelompok ${index + 1}</h3>
+                        <span class="text-xs bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md font-medium">${kelompok.length} Orang</span>
+                    </div>
+                    <ul class="space-y-1 text-sm">
+                        ${anggotaHTML}
+                    </ul>
+                `;
+                grid.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
